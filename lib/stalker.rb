@@ -59,15 +59,23 @@ module Stalker
     failed_connection(e)
   end
 
-  def work(jobs=nil)
+  def work(jobs=nil, listen_timeout=nil, timeout_continue_delay=nil)
     prep(jobs)
-    loop { work_one_job }
+    loop { work_one_job(listen_timeout, timeout_continue_delay) }
   end
 
   class JobTimeout < RuntimeError; end
 
-  def work_one_job
-    job = beanstalk.reserve
+  def work_one_job(listen_timeout=nil, timeout_continue_delay=nil)
+    
+    begin
+      job = beanstalk.reserve(listen_timeout)
+    rescue Beanstalk::TimedOut => e
+      raise e if listen_timeout.nil?
+      sleep timeout_continue_delay unless timeout_continue_delay.nil?
+      return
+    end
+    
     name, args = JSON.parse job.body
     log_job_begin(name, args)
     handler = @@handlers[name]
